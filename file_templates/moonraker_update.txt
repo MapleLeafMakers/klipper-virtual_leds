@@ -3,3 +3,4 @@ type: git_repo
 path: ~/klipper-virtual_leds
 origin: https://github.com/MapleLeafMakers/klipper-virtual_leds.git
 is_system_service: False
+primary_branch: main
