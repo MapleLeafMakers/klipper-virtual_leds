@@ -18,7 +18,7 @@ With virtual_leds, you can define the nozzle leds as a separate chain:
 
 ```ini
 [virtual_leds nozzle_leds]
-leds: sb_leds (2,3)
+leds: neopixel:sb_leds (2,3)
 ```
 
 Then set them with a single command:
