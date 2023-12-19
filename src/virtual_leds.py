@@ -37,7 +37,7 @@ class PrinterVirtualLeds:
         name = config.get_name().split()[1]
         
         # Initialize color data
-        self.configChains = [self.parse_chain(line) for line in config.get('leds').split('\n')]
+        self.configChains = [self.parse_chain(line) for line in config.get('leds').split('\n') if line.strip()]
         pled = printer.load_object(config, "led")
         self.led_helper = pled.setup_helper(config, self.update_leds, sum(len(leds) for chainName, leds in self.configChains))
         
