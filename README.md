@@ -36,3 +36,6 @@ The module can be installed into a existing Klipper installation with an install
     cd klipper-virtual_leds
     ./install-virtual_leds.sh
 
+## Credits
+
+klipper-virtual_leds is inspired by, borrows heavily from, and works well with [klipper-led_effect by Julian Schill](https://github.com/julianschill/klipper-led_effect)
