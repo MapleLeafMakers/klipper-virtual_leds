@@ -30,6 +30,7 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
 import logging
+from .led import LEDHelper
 
 class PrinterVirtualLeds:
     def __init__(self, config):
@@ -38,8 +39,7 @@ class PrinterVirtualLeds:
         
         # Initialize color data
         self.configChains = [self.parse_chain(line) for line in config.get('leds').split('\n') if line.strip()]
-        pled = printer.load_object(config, "led")
-        self.led_helper = pled.setup_helper(config, self.update_leds, sum(len(leds) for chainName, leds in self.configChains))
+        self.led_helper = LEDHelper(config, self.update_leds, 1)
         
         # Register commands
         printer.register_event_handler("klippy:ready", self.handle_ready)
