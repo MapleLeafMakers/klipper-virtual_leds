@@ -29,75 +29,93 @@
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
+
 import logging
+from . import led
+
 
 class PrinterVirtualLeds:
     def __init__(self, config):
-        self.printer = printer = config.get_printer()
-        name = config.get_name().split()[1]
-        
-        # Initialize color data
+        self.config = config
+        self.printer = config.get_printer()
+        self.name = config.get_name().split()[1]
         self.configChains = [self.parse_chain(line) for line in config.get('leds').split('\n') if line.strip()]
-        pled = printer.load_object(config, "led")
-        self.led_helper = pled.setup_helper(config, self.update_leds, sum(len(leds) for chainName, leds in self.configChains))
-        
+        self.leds = []
+        self.led_helper = led.LEDHelper(config, self.update_leds,
+                                        sum(len(leds) for chain_name, leds in self.configChains))
+
         # Register commands
-        printer.register_event_handler("klippy:ready", self.handle_ready)
+        self.printer.register_event_handler('klippy:ready', self.handle_ready)
 
     def handle_ready(self):
-        self.leds = []
-        for chainName, leds in self.configChains:
-            chain = self.printer.lookup_object(chainName)
-            for led in leds:
-                self.leds.append((chain, led))
-        
-    def parse_chain(self, chain):
+        for chain_name, leds in self.configChains:
+            try:
+                chain = self.printer.lookup_object(chain_name)
+                if chain:
+                    for led_index in leds:
+                        self.leds.append((chain, led_index))
+            except Exception as e:
+                raise self.config.error(
+                    "Virtual LED chain '%s' referenced in '%s' cannot be loaded:\n%s" % (chain_name, self.name, str(e)))
+
+    @staticmethod
+    def parse_chain(chain):
         chain = chain.strip()
-        leds=[]
-        parms = [parameter.strip() for parameter in chain.split()
-                    if parameter.strip()]
+        leds = []
+        parms = [parameter.strip() for parameter in chain.split() if parameter.strip()]
         if parms:
-            chainName=parms[0].replace(':',' ')
-            ledIndices   = ''.join(parms[1:]).strip('()').split(',')
-            for led in ledIndices:
-                if led:
-                    if '-' in led:
-                        start, stop = map(int,led.split('-'))
+            chain_name = parms[0].replace(':', ' ')
+            led_indices = ''.join(parms[1:]).strip('()').split(',')
+            for led_index in led_indices:
+                if led_index:
+                    if '-' in led_index:
+                        start, stop = map(int, led_index.split('-'))
                         if stop == start:
-                            ledList = [start-1]
+                            led_list = [start - 1]
                         elif stop > start:
-                            ledList = list(range(start-1, stop))
+                            led_list = list(range(start - 1, stop))
                         else:
-                            ledList = list(reversed(range(stop-1, start)))
-                        for i in ledList:
+                            led_list = list(reversed(range(stop - 1, start)))
+                        for i in led_list:
                             leds.append(int(i))
                     else:
-                        for i in led.split(','):
-                            leds.append(int(i)-1)
-
-            return chainName, leds
+                        for i in led_index.split(','):
+                            leds.append(int(i) - 1)
+            return chain_name, leds
         else:
             return None, None
-        
+
     def update_leds(self, led_state, print_time):
         chains_to_update = set()
-        for color, (chain, led) in zip(led_state, self.leds):
-            chain.led_helper.led_state[led] = color
+        for color, (chain, led_index) in zip(led_state, self.leds):
+            chain.led_helper.led_state[led_index] = color
             chains_to_update.add(chain)
         for chain in chains_to_update:
-            chain.led_helper.update_func(chain.led_helper.led_state, None)
+            chain.led_helper.need_transmit = True
+            if hasattr(chain.led_helper, '_check_transmit'):
+                chain.led_helper._check_transmit()  # New klipper
+            elif hasattr(chain.led_helper, 'check_transmit'):
+                chain.led_helper.check_transmit(None)  # Older klipper / Kalico
+            else:
+                raise RuntimeError(
+                    'Klipper version not compatible: led_helper missing \'_check_transmit\' and \'check_transmit\'.')
 
-    
     def get_status(self, eventtime=None):
         state = []
-        chain_status = dict()
-        for chain, led in self.leds:
+        chain_status = {}
+        for chain, led_index in self.leds:
             if chain not in chain_status:
                 status = chain.led_helper.get_status(eventtime)['color_data']
                 chain_status[chain] = status
 
-            state.append(chain_status[chain][led])
-        return dict(color_data=state)
+            state.append(chain_status[chain][led_index])
+        return {'color_data': state}
+
+
+@staticmethod
+def log(msg, *args, **kwargs):
+    logging.info('Virtual LEDs: ' + str(msg))
+
 
 def load_config_prefix(config):
     return PrinterVirtualLeds(config)
