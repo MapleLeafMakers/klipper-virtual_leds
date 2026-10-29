@@ -30,16 +30,23 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
 import logging
+from . import led
 
 class PrinterVirtualLeds:
     def __init__(self, config):
         self.printer = printer = config.get_printer()
         name = config.get_name().split()[1]
-        
+        self.leds = []  # chains are resolved at klippy:ready; empty until then
+
         # Initialize color data
         self.configChains = [self.parse_chain(line) for line in config.get('leds').split('\n') if line.strip()]
-        pled = printer.load_object(config, "led")
-        self.led_helper = pled.setup_helper(config, self.update_leds, sum(len(leds) for chainName, leds in self.configChains))
+        led_count = sum(len(leds) for chainName, leds in self.configChains)
+        if hasattr(led, 'PrinterLED'):
+            # Older Klipper registers helpers through the [led] object
+            pled = printer.load_object(config, "led")
+            self.led_helper = pled.setup_helper(config, self.update_leds, led_count)
+        else:
+            self.led_helper = led.LEDHelper(config, self.update_leds, led_count)
         
         # Register commands
         printer.register_event_handler("klippy:ready", self.handle_ready)
@@ -80,12 +87,19 @@ class PrinterVirtualLeds:
             return None, None
         
     def update_leds(self, led_state, print_time):
-        chains_to_update = set()
-        for color, (chain, led) in zip(led_state, self.leds):
-            chain.led_helper.led_state[led] = color
-            chains_to_update.add(chain)
-        for chain in chains_to_update:
-            chain.led_helper.update_func(chain.led_helper.led_state, None)
+        new_states = {}
+        for color, (chain, index) in zip(led_state, self.leds):
+            state = new_states.setdefault(chain, list(chain.led_helper.led_state))
+            state[index] = color
+        # Hand off to each physical chain helper so its mutex serializes
+        # transmits; several virtual chains may share one physical chain.
+        for chain, state in new_states.items():
+            helper = chain.led_helper
+            helper.led_state = state
+            helper.need_transmit = True
+            # Older Klipper exposes this as check_transmit (no mutex)
+            check_transmit = getattr(helper, '_check_transmit', None) or helper.check_transmit
+            check_transmit(print_time)
 
     
     def get_status(self, eventtime=None):
